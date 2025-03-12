@@ -621,6 +621,7 @@ class InteractiveDAGVisualizerApp:
         
         # Calculate node positions based on selected layout or use stored positions
         pos = nx.get_node_attributes(G, 'pos')
+        layout_status = getattr(G, 'current_layout', 'custom')  # Default layout status
         
         # If positions don't exist, force_layout is True, or the layout has changed, generate new layout
         layout_type = self.layout_var.get()
@@ -699,8 +700,7 @@ class InteractiveDAGVisualizerApp:
         # Draw labels
         nx.draw_networkx_labels(G, pos, font_weight='bold', ax=self.ax)
         
-        # Set title and remove axis
-        self.ax.set_title(f"Pattern {self.current_pattern_idx} - Interactive View")
+        self.ax.set_title(f"Pattern {self.current_pattern_idx} - Layout: {layout_status}")
         self.ax.axis('off')
         
         # Restore previous view limits if available and not doing a full reset
