@@ -197,7 +197,7 @@ class InteractiveDAGVisualizerApp:
         self.hover_frame.pack(fill=tk.X)
         
         # Hover info label
-        self.hover_label = ttk.Label(self.hover_frame, text="Hover over a node to see connections | Drag nodes to reposition | Use toolbar for pan/zoom")
+        self.hover_label = ttk.Label(self.hover_frame, text="Hover over a node to see connections | Drag nodes using middle click to reposition | Use left/right click for pan/zoom")
         self.hover_label.pack(side=tk.LEFT, padx=(0,20))
         
         # Create matplotlib figure and canvas
@@ -498,7 +498,7 @@ class InteractiveDAGVisualizerApp:
                     self.highlight_connected_nodes(closest_node)
                 else:
                     # Reset to default display
-                    self.hover_label.config(text="Hover over a node to see connections | Drag nodes to reposition | Use toolbar for pan/zoom")
+                    self.hover_label.config(text="Hover over a node to see connections | Drag nodes using middle click to reposition | Use left/right click for pan/zoom")
                     self.update_plot(no_draw=True)
                     self.canvas.draw()
     
@@ -785,8 +785,8 @@ class InteractiveDAGVisualizerApp:
             "• circo: Circular layout - All nodes arranged in a single circle\n"
             "• spring: Standard spring layout with moderate settings\n\n"
             "Interactive Features:\n"
-            "• Drag nodes to reposition them\n"
-            "• Use the toolbar to pan and zoom\n"
+            "• Drag nodes using middle click to reposition them\n"
+            "• Use the left/right click to pan and zoom\n"
             "• Click 'Reset View' to restore the original layout\n"
             "• Hover over nodes to see connection information"
         )
