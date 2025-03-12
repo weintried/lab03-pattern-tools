@@ -265,6 +265,9 @@ class InteractiveDAGVisualizerApp:
         self.last_click_pos = None  # Last mouse position during drag
         self.panning = False    # Whether we're panning the canvas
         self.pan_start = None   # Start position for panning
+        self.critical_path_colors = {}  # Map path index to color
+        self.critical_path_labels = []  # Store the path labels for hover events
+        self.highlighted_path = None  # Currently highlighted critical path
         
         # Add weight editing state
         self.editing_weight = False
@@ -411,8 +414,14 @@ class InteractiveDAGVisualizerApp:
         self.dag_label.pack(side=tk.LEFT, padx=(0,20))
         
         # Critical path
-        self.path_label = ttk.Label(self.info_frame, text="Critical Path: None")
-        self.path_label.pack(side=tk.LEFT, padx=(0,20))
+        self.path_label_frame = ttk.Frame(self.info_frame)
+        self.path_label_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        self.path_header = ttk.Label(self.path_label_frame, text="Critical Path: None")
+        self.path_header.pack(side=tk.TOP, anchor=tk.W)
+        
+        self.path_container = ttk.Frame(self.path_label_frame)
+        self.path_container.pack(side=tk.TOP, fill=tk.X, expand=True)
         
         # Hover info frame (for when user hovers over a node)
         self.hover_frame = ttk.Frame(root, padding="5")
@@ -978,6 +987,9 @@ class InteractiveDAGVisualizerApp:
         prev_xlim = self.ax.get_xlim() if hasattr(self.ax, 'get_xlim') else None
         prev_ylim = self.ax.get_ylim() if hasattr(self.ax, 'get_ylim') else None
         
+        # Store the currently highlighted path index for later
+        prev_highlighted = self.highlighted_path
+        
         self.ax.clear()
         
         G = self.graphs[self.current_pattern_idx]
@@ -1025,20 +1037,29 @@ class InteractiveDAGVisualizerApp:
         
         # Find ALL critical paths considering node weights
         critical_paths, path_weight = find_all_critical_paths(G)
+        self.critical_paths = critical_paths  # Store for later reference
         num_critical_paths = len(critical_paths)
         
         # Get node weights
         weights = {node: G.nodes[node].get('weight', 1) for node in G.nodes()}
+        
+        # Generate colors for critical paths if needed
+        if num_critical_paths > 0 and len(self.critical_path_colors) != num_critical_paths:
+            colors = self.generate_distinct_colors(num_critical_paths)
+            self.critical_path_colors = {i: colors[i] for i in range(num_critical_paths)}
         
         # Set node colors and sizes based on weights
         node_colors = []
         node_sizes = []
         base_size = 500
         
-        # Collect all nodes that appear in any critical path
-        critical_path_nodes = set()
-        for path in critical_paths:
-            critical_path_nodes.update(path)
+        # Collect all nodes that appear in any critical path, with their path index
+        critical_path_nodes = {}  # Maps node to list of path indices it appears in
+        for i, path in enumerate(critical_paths):
+            for node in path:
+                if node not in critical_path_nodes:
+                    critical_path_nodes[node] = []
+                critical_path_nodes[node].append(i)
         
         for node in G.nodes():
             weight = weights[node]
@@ -1050,39 +1071,63 @@ class InteractiveDAGVisualizerApp:
                 node_colors.append('green')
             elif node == 1:  # Output node
                 node_colors.append('red')
-            elif node in critical_path_nodes:  # On any critical path
-                node_colors.append('orange')
+            elif node in critical_path_nodes:
+                # If highlighted path is set, use that path's color
+                if prev_highlighted is not None and prev_highlighted in critical_path_nodes[node]:
+                    node_colors.append(self.critical_path_colors[prev_highlighted])
+                else:
+                    # If node is in multiple paths, use orange as a generic color
+                    if len(critical_path_nodes[node]) > 1:
+                        node_colors.append('orange')
+                    else:
+                        # Otherwise use the color of the single path it's in
+                        path_idx = critical_path_nodes[node][0]
+                        node_colors.append(self.critical_path_colors.get(path_idx, 'orange'))
             else:  # Other nodes
                 node_colors.append('skyblue')
         
-        # Set edge colors - collect all critical path edges
-        critical_path_edges = set()
-        for path in critical_paths:
-            for i in range(len(path) - 1):
-                critical_path_edges.add((path[i], path[i+1]))
+        # Set edge colors - collect critical path edges with their path indices
+        critical_path_edges = {}  # Maps edge to list of path indices it appears in
+        for i, path in enumerate(critical_paths):
+            for j in range(len(path) - 1):
+                edge = (path[j], path[j+1])
+                if edge not in critical_path_edges:
+                    critical_path_edges[edge] = []
+                critical_path_edges[edge].append(i)
         
         edge_colors = []
         for u, v in G.edges():
-            if (u, v) in critical_path_edges:
-                edge_colors.append('red')  # On a critical path
+            edge = (u, v)
+            if edge in critical_path_edges:
+                # If highlighted path is set, use that path's color
+                if prev_highlighted is not None and prev_highlighted in critical_path_edges[edge]:
+                    edge_colors.append(self.critical_path_colors[prev_highlighted])
+                else:
+                    # If edge is in multiple paths, use red as a generic color
+                    if len(critical_path_edges[edge]) > 1:
+                        edge_colors.append('red')
+                    else:
+                        # Otherwise use the color of the single path it's in
+                        path_idx = critical_path_edges[edge][0]
+                        edge_colors.append(self.critical_path_colors.get(path_idx, 'red'))
             else:
                 edge_colors.append('gray')
         
-        # Draw nodes with sizes based on weights
+        # Draw nodes with sizes and colors
         self.node_collection = nx.draw_networkx_nodes(G, pos, 
-                                                    node_color=node_colors, 
-                                                    node_size=node_sizes, 
-                                                    ax=self.ax)
+                                                   node_color=node_colors, 
+                                                   node_size=node_sizes, 
+                                                   ax=self.ax)
         
         # Store current nodes list for interaction
         self.current_nodes = list(G.nodes())
         
         # Draw edges
         nx.draw_networkx_edges(G, pos, 
-                              edge_color=edge_colors, 
-                              width=1.5, 
-                              arrowsize=15,
-                              ax=self.ax)
+                             edge_color=edge_colors, 
+                             width=1.5, 
+                             arrowsize=15,
+                             ax=self.ax)
         
         # Draw labels, including weights if enabled
         if self.show_weights_var.get():
@@ -1107,34 +1152,19 @@ class InteractiveDAGVisualizerApp:
         self.edge_label.config(text=f"Edges: {G.number_of_edges()}")
         self.dag_label.config(text=f"Is DAG: {'Yes' if is_dag else 'No'}")
         
-        # Update critical path info with support for multiple paths
-        if critical_paths:
-            if num_critical_paths == 1:
-                path_str = " → ".join([f"{node}({weights[node]})" for node in critical_paths[0]])
-                self.path_label.config(text=f"Critical Path: {path_str}")
-            else:
-                # Format for multiple paths
-                paths_str = f"Critical Paths ({num_critical_paths}):\n"
-                for i, path in enumerate(critical_paths[:5]):  # Limit display to first 5 paths if there are many
-                    path_str = " → ".join([f"{node}({weights[node]})" for node in path])
-                    paths_str += f"  {i+1}: {path_str}\n"
-                
-                if num_critical_paths > 5:
-                    paths_str += f"  ... and {num_critical_paths - 5} more"
-                    
-                self.path_label.config(text=paths_str)
-            
-            # Update weight sum label with count of paths
-            if num_critical_paths > 1:
-                self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight} ({num_critical_paths} paths)")
-            else:
-                self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight}")
+        # Update critical path display with interactive labels
+        self.update_critical_path_display()
+        
+        # Update weight sum label with count of paths
+        if num_critical_paths > 1:
+            self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight} ({num_critical_paths} paths)")
+        elif num_critical_paths == 1:
+            self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight}")
         else:
-            self.path_label.config(text=f"Critical Path: None")
             self.weight_sum_label.config(text=f"Critical Path Delay: 0")
         
         # Update hover label to include weight editing info
-        self.hover_label.config(text="Hover over a node to see connections | Right-click to edit weight | Drag nodes using middle click | Use left/right click for pan/zoom")
+        self.hover_label.config(text="Hover over a node to see connections | Right-click to edit weight | Drag nodes using middle click | Use left/right click for pan/zoom | Hover over path labels to highlight")
         
         # Redraw canvas unless we're just updating for hover highlighting
         if not no_draw:
@@ -1258,6 +1288,156 @@ class InteractiveDAGVisualizerApp:
             
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter valid integer values for min and max weights.")
+    
+    def generate_distinct_colors(self, n):
+        """Generate n visually distinct colors for paths"""
+        # Basic set of distinct colors
+        base_colors = [
+            '#FF0000',  # Red
+            '#00FF00',  # Green
+            '#0000FF',  # Blue
+            '#FFFF00',  # Yellow
+            '#FF00FF',  # Magenta
+            '#00FFFF',  # Cyan
+            '#FFA500',  # Orange
+            '#800080',  # Purple
+            '#008000',  # Dark Green
+            '#000080',  # Navy
+            '#800000',  # Maroon
+            '#008080',  # Teal
+            '#FFC0CB',  # Pink
+            '#A52A2A',  # Brown
+            '#DDA0DD'   # Plum
+        ]
+        
+        # If we need more colors than in the base set
+        if n > len(base_colors):
+            # Generate additional colors by interpolating
+            import colorsys
+            
+            HSV_tuples = [(x * 1.0 / n, 0.7, 0.7) for x in range(n)]
+            RGB_tuples = map(lambda x: colorsys.hsv_to_rgb(*x), HSV_tuples)
+            
+            # Convert to hex colors
+            rgb_colors = ['#%02x%02x%02x' % (int(r * 255), int(g * 255), int(b * 255)) 
+                         for r, g, b in RGB_tuples]
+            return rgb_colors
+        else:
+            return base_colors[:n]
+    
+    def highlight_critical_path(self, path_idx=None):
+        """Highlight a specific critical path or remove highlighting if None"""
+        if not hasattr(self, 'critical_paths') or not self.critical_paths:
+            return
+        
+        G = self.graphs[self.current_pattern_idx]
+        pos = nx.get_node_attributes(G, 'pos')
+        weights = {node: G.nodes[node].get('weight', 1) for node in G.nodes()}
+        
+        # Update the graph with standard coloring first
+        self.update_plot(no_draw=True)
+        
+        if path_idx is not None and 0 <= path_idx < len(self.critical_paths):
+            # Store currently highlighted path
+            self.highlighted_path = path_idx
+            
+            # Get the specific path and its color
+            path = self.critical_paths[path_idx]
+            color = self.critical_path_colors.get(path_idx, 'red')
+            
+            # Draw nodes along this path with the path's color
+            critical_nodes = path
+            nx.draw_networkx_nodes(G, pos, 
+                                  nodelist=critical_nodes,
+                                  node_color=color,
+                                  node_size=700,  # Larger size for emphasis
+                                  edgecolors='black',
+                                  linewidths=2,
+                                  alpha=0.8,
+                                  ax=self.ax)
+            
+            # Draw edges along this path with the path's color
+            critical_edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
+            nx.draw_networkx_edges(G, pos, 
+                                  edgelist=critical_edges,
+                                  edge_color=color,
+                                  width=3.0,  # Thicker line for emphasis
+                                  arrowsize=20,
+                                  ax=self.ax)
+            
+            # Draw labels for nodes on this path (with normal weight, not bold)
+            if self.show_weights_var.get():
+                labels = {node: f"{node}\n({weights[node]})" for node in critical_nodes}
+            else:
+                labels = {node: f"{node}" for node in critical_nodes}
+                
+            nx.draw_networkx_labels(G, pos, 
+                                   labels=labels,
+                                   font_weight='normal',  # Changed from 'bold' to 'normal'
+                                   font_size=12,
+                                   ax=self.ax)
+        
+        self.canvas.draw()
+    
+    def on_path_label_enter(self, event, path_idx):
+        """Handle mouse entering a path label"""
+        self.highlight_critical_path(path_idx)
+    
+    def on_path_label_leave(self, event):
+        """Handle mouse leaving a path label"""
+        self.highlight_critical_path(None)  # Remove path highlighting
+        self.highlighted_path = None
+    
+    def update_critical_path_display(self):
+        """Update the critical path display with interactive labels"""
+        # Clear previous labels
+        for widget in self.path_container.winfo_children():
+            widget.destroy()
+        self.critical_path_labels = []
+        
+        if not hasattr(self, 'critical_paths') or not self.critical_paths:
+            self.path_header.config(text="Critical Path: None")
+            return
+            
+        G = self.graphs[self.current_pattern_idx]
+        weights = {node: G.nodes[node].get('weight', 1) for node in G.nodes()}
+        num_paths = len(self.critical_paths)
+        
+        # Generate colors for paths if not already done
+        if len(self.critical_path_colors) != num_paths:
+            colors = self.generate_distinct_colors(num_paths)
+            self.critical_path_colors = {i: colors[i] for i in range(num_paths)}
+        
+        # Update the header
+        if num_paths == 1:
+            self.path_header.config(text="Critical Path:")
+        else:
+            self.path_header.config(text=f"Critical Paths ({num_paths}):")
+        
+        # Create label for each path (up to 10 for space reasons)
+        max_to_show = min(10, num_paths)
+        for i in range(max_to_show):
+            path = self.critical_paths[i]
+            path_str = " → ".join([f"{node}({weights[node]})" for node in path])
+            
+            # Create the label with the path's color
+            color = self.critical_path_colors.get(i, 'black')
+            label = ttk.Label(self.path_container, 
+                           text=f"{i+1}: {path_str}", 
+                           foreground=color)
+            label.pack(side=tk.TOP, anchor=tk.W, padx=(15, 0))
+            
+            # Bind hover events
+            label.bind("<Enter>", lambda event, idx=i: self.on_path_label_enter(event, idx))
+            label.bind("<Leave>", self.on_path_label_leave)
+            
+            self.critical_path_labels.append(label)
+        
+        # If there are more paths than we're showing
+        if num_paths > max_to_show:
+            ttk.Label(self.path_container, 
+                   text=f"... and {num_paths - max_to_show} more").pack(
+                   side=tk.TOP, anchor=tk.W, padx=(15, 0))
 
 def main():
     from argparse import ArgumentParser
