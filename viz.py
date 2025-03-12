@@ -93,6 +93,7 @@ class InteractiveDAGVisualizerApp:
         self.file_path = file_path
         self.current_pattern_idx = 0
         self.graphs = []  # Store NetworkX graph objects
+        self.current_layout = "dot"  # Track the current layout
         
         # Interactive state tracking
         self.hover_node = None  # Currently hovered node
@@ -156,7 +157,7 @@ class InteractiveDAGVisualizerApp:
             width=10
         )
         self.layout_selector.pack(side=tk.LEFT)
-        self.layout_selector.bind("<<ComboboxSelected>>", self.update_plot)
+        self.layout_selector.bind("<<ComboboxSelected>>", self.change_layout)
         
         # Reset view button
         self.reset_view_button = ttk.Button(self.control_frame, text="Reset View", command=self.reset_view)
@@ -223,6 +224,23 @@ class InteractiveDAGVisualizerApp:
         # Display the first pattern
         self.update_plot()
         self.update_button_states()
+    
+    def change_layout(self, event=None):
+        """Handle layout change events."""
+        new_layout = self.layout_var.get()
+        if new_layout != self.current_layout:
+            self.current_layout = new_layout
+            
+            # Reset the positions for the current graph
+            G = self.graphs[self.current_pattern_idx]
+            
+            # Clear stored positions
+            for node in G.nodes():
+                if 'pos' in G.nodes[node]:
+                    del G.nodes[node]['pos']
+            
+            # Update the plot with the new layout
+            self.update_plot()
         
     def hierarchical_layout(self, G, horizontal=True):
         """
@@ -610,8 +628,13 @@ class InteractiveDAGVisualizerApp:
         
         # Calculate node positions based on selected layout or use stored positions
         pos = nx.get_node_attributes(G, 'pos')
-        if not pos:  # If positions are not already stored (first time or reset)
+        
+        # Generate new positions if:
+        # 1. No positions stored yet, or
+        # 2. This is not a "no_draw" update (which is typically for hover highlighting)
+        if not pos or (not no_draw and self.layout_var.get() != self.current_layout):
             layout_type = self.layout_var.get()
+            self.current_layout = layout_type
             
             try:
                 # Generate layout based on selected type
@@ -686,10 +709,10 @@ class InteractiveDAGVisualizerApp:
         nx.draw_networkx_labels(G, pos, font_weight='bold', ax=self.ax)
         
         # Set title and remove axis
-        self.ax.set_title(f"Pattern {self.current_pattern_idx} - Interactive View")
+        self.ax.set_title(f"Pattern {self.current_pattern_idx} - {self.current_layout.capitalize()} Layout")
         self.ax.axis('off')
         
-        # Restore previous view limits if available and not doing a full reset
+        # Restore previous view limits if available and preserving view
         if prev_xlim and prev_ylim and no_draw:
             self.ax.set_xlim(prev_xlim)
             self.ax.set_ylim(prev_ylim)
@@ -704,7 +727,7 @@ class InteractiveDAGVisualizerApp:
             path_str = " → ".join(map(str, critical_path))
             self.path_label.config(text=f"Critical Path: {path_str} (Length: {path_length})")
         else:
-            self.path_label.config(text="Critical Path: None")
+            self.path_label.config(text=f"Critical Path: None")
         
         # Redraw canvas unless we're just updating for hover highlighting
         if not no_draw:
@@ -716,7 +739,8 @@ class InteractiveDAGVisualizerApp:
         
         # Clear stored positions
         for node in G.nodes():
-            G.nodes[node].pop('pos', None)
+            if 'pos' in G.nodes[node]:
+                del G.nodes[node]['pos']
         
         # Reset zoom and pan
         self.toolbar.home()
