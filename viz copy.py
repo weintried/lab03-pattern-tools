@@ -1,11 +1,11 @@
 import os
+import random
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import random
 
 def read_patterns(file_path):
     """
@@ -47,216 +47,54 @@ def read_patterns(file_path):
     
     return patterns[:num_patterns]  # Ensure we only return the expected number of patterns
 
-def read_weights(file_path):
-    """
-    Read node weights from the given file path.
-    Returns a list of weight dictionaries, where each dictionary maps node IDs to weights.
-    """
-    try:
-        with open(file_path, 'r') as f:
-            lines = f.readlines()
-        
-        if not lines:
-            return None
-            
-        # Get the number of patterns
-        num_patterns = int(lines[0].strip())
-        weights = []
-        
-        line_idx = 1
-        pattern_idx = 0
-        
-        # Skip the initial blank line if present
-        if line_idx < len(lines) and not lines[line_idx].strip():
-            line_idx += 1
-        
-        while pattern_idx < num_patterns and line_idx < len(lines):
-            # Read pattern index
-            if not lines[line_idx].strip():
-                line_idx += 1
-                continue
-            
-            try:
-                current_pattern_idx = int(lines[line_idx].strip())
-                line_idx += 1
-                
-                # Create a new weight dictionary for this pattern
-                current_weights = {}
-                weights.append(current_weights)
-                
-                # Read 16 weights (nodes 0-15)
-                for node_idx in range(16):
-                    if line_idx < len(lines) and lines[line_idx].strip():
-                        try:
-                            weight = int(lines[line_idx].strip())
-                            current_weights[node_idx] = weight
-                        except ValueError:
-                            pass  # Skip invalid weights
-                    line_idx += 1
-                
-                pattern_idx += 1
-                
-            except ValueError:
-                line_idx += 1  # Skip lines that can't be parsed as integers
-        
-        # Debug prints
-        print(f"Read {len(weights)} weight patterns")
-        if weights:
-            print(f"First pattern weights: {weights[0]}")
-        
-        return weights
-    
-    except (FileNotFoundError, ValueError, IndexError) as e:
-        print(f"Error reading weights file: {str(e)}")
-        return None
-
-def write_weights(file_path, all_weights, num_patterns):
-    """
-    Write node weights to the given file path in the required format.
-    
-    Args:
-        file_path: Path to write the weights file
-        all_weights: List of dictionaries, each mapping node IDs to weights
-        num_patterns: Total number of patterns
-    """
-    with open(file_path, 'w') as f:
-        # Write number of patterns
-        f.write(f"{num_patterns}\n\n")
-        
-        # Write each pattern's weights
-        for pattern_idx, weights in enumerate(all_weights):
-            # Write pattern index
-            f.write(f"{pattern_idx}\n")
-            
-            # Write weights for each node (assuming 16 nodes per pattern)
-            for node_idx in range(16):  # Nodes 0-15
-                # Use stored weight or generate a new random weight, but never default to 1
-                if node_idx in weights:
-                    weight = weights[node_idx]
-                else:
-                    # This shouldn't happen with proper weight initialization, but just in case
-                    weight = random.randint(1, 10)
-                    
-                f.write(f"{weight}\n")
-            
-            # Add blank line between patterns
-            f.write("\n")
-
-def generate_random_weights(num_patterns, num_nodes=16, min_val=1, max_val=10):
-    """
-    Generate random weights for all nodes in all patterns.
-    
-    Args:
-        num_patterns: Number of patterns
-        num_nodes: Number of nodes per pattern
-        min_val: Minimum weight value
-        max_val: Maximum weight value
-        
-    Returns:
-        List of dictionaries mapping node IDs to weights
-    """
-    all_weights = []
-    
-    for _ in range(num_patterns):
-        weights = {node: random.randint(min_val, max_val) for node in range(num_nodes)}
-        all_weights.append(weights)
-    
-    return all_weights
-
-def find_all_critical_paths(G):
-    """
-    Find all critical paths from node 0 to node 1 based on accumulating node weights.
-    Returns a list of all paths with the maximum weight and the total weight.
-    """
-    # Check if a path exists from 0 to 1
-    if not nx.has_path(G, 0, 1):
-        return [], 0
-    
-    # Topological sort
-    topo_order = list(nx.topological_sort(G))
-    
-    # Get node weights with a default value of 1 if weight is not assigned
-    weights = {node: G.nodes[node].get('weight', 1) for node in G.nodes()}
-    
-    # Initialize distances
-    dist = {node: float('-inf') for node in G.nodes()}
-    dist[0] = weights[0]  # Start with weight of node 0
-    
-    # Initialize predecessor tracking - store all predecessors that lead to max weight
-    pred = {node: set() for node in G.nodes()}
-    
-    # Dynamic programming to find path with maximum accumulated weight
-    for node in topo_order:
-        if dist[node] != float('-inf'):  # If we've reached this node
-            for neighbor in G.successors(node):
-                if dist[node] + weights[neighbor] > dist[neighbor]:
-                    # Found a better path - clear old predecessors and add the new one
-                    dist[neighbor] = dist[node] + weights[neighbor]
-                    pred[neighbor] = {node}
-                elif dist[node] + weights[neighbor] == dist[neighbor]:
-                    # Found an equally good path - add this predecessor too
-                    pred[neighbor].add(node)
-    
-    # If there's no path to node 1
-    if dist[1] == float('-inf'):
-        return [], 0
-    
-    # Reconstruct all paths with maximum weight
-    max_weight = dist[1]
-    
-    # Get all critical paths using recursive DFS
-    def get_all_paths(node):
-        if node == 0:
-            return [[0]]
-        
-        all_paths = []
-        for p in pred[node]:
-            for path in get_all_paths(p):
-                all_paths.append(path + [node])
-        return all_paths
-    
-    critical_paths = get_all_paths(1)
-    
-    return critical_paths, max_weight
-
-# Replace the old find_critical_path function or use this as a new function
 def find_critical_path(G):
     """
-    Wrapper for backward compatibility - returns the first critical path found.
+    Find the critical path from node 0 to node 1 based on the sum of node weights.
+    Each node's weight is taken from the 'weight' attribute (defaulting to 0 if missing).
+    Returns the path as a list of nodes and the total weight along that path.
     """
-    paths, weight = find_all_critical_paths(G)
-    if paths:
-        return paths[0], weight
-    return None, 0
+    if not nx.has_path(G, 0, 1):
+        return None, 0
 
-def assign_random_weights(G, min_val=1, max_val=10):
-    """
-    Assign random weights to nodes in the graph.
-    """
-    weights = {node: random.randint(min_val, max_val) for node in G.nodes()}
-    nx.set_node_attributes(G, weights, 'weight')
-    return G
+    topo_order = list(nx.topological_sort(G))
+    # Define a helper to get the weight; default to 0 if not set
+    get_weight = lambda node: G.nodes[node].get('weight', 0)
 
-def assign_weights_from_dict(G, weights_dict):
-    """
-    Assign weights to nodes in the graph from a dictionary.
-    """
-    for node, weight in weights_dict.items():
-        if node in G.nodes():
-            G.nodes[node]['weight'] = weight
-    return G
+    dist = {node: float('-inf') for node in G.nodes()}
+    pred = {node: None for node in G.nodes()}
+
+    # Start with node 0's own weight
+    dist[0] = get_weight(0)
+    
+    for node in topo_order:
+        if dist[node] != float('-inf'):
+            for neighbor in G.successors(node):
+                candidate = dist[node] + get_weight(neighbor)
+                if candidate > dist[neighbor]:
+                    dist[neighbor] = candidate
+                    pred[neighbor] = node
+
+    if dist[1] == float('-inf'):
+        return None, 0
+
+    # Reconstruct the path from node 1 to node 0
+    path = []
+    current = 1
+    while current is not None:
+        path.append(current)
+        current = pred[current]
+    path.reverse()
+    
+    return path, dist[1]
 
 class InteractiveDAGVisualizerApp:
-    def __init__(self, root, patterns, file_path=None, weights=None, weights_file_path=None):
+    def __init__(self, root, patterns, file_path=None):
         self.root = root
         self.patterns = patterns  # list of pattern edge lists
         self.file_path = file_path
-        self.weights_file_path = weights_file_path  # Path to weights file
-        self.all_weights = weights  # List of weight dictionaries for all patterns
         self.current_pattern_idx = 0
         self.graphs = []  # Store NetworkX graph objects
         self.current_layout = "dot"  # Track the current layout
-        self.weight_range = (1, 10)  # Default range for random weights
         
         # Interactive state tracking
         self.hover_node = None  # Currently hovered node
@@ -266,23 +104,11 @@ class InteractiveDAGVisualizerApp:
         self.panning = False    # Whether we're panning the canvas
         self.pan_start = None   # Start position for panning
         
-        # Add weight editing state
-        self.editing_weight = False
-        self.edit_node = None
-        self.weight_entry = None
-        
         # Create graph objects for all patterns
-        for i, pattern in enumerate(patterns):
+        for pattern in patterns:
             G = nx.DiGraph()
             for source, dest in pattern:
                 G.add_edge(source, dest)
-            
-            # Assign weights from provided weights or generate random
-            if self.all_weights and i < len(self.all_weights):
-                assign_weights_from_dict(G, self.all_weights[i])
-            else:
-                assign_random_weights(G, *self.weight_range)
-                
             self.graphs.append(G)
 
         # Register window close event
@@ -299,12 +125,6 @@ class InteractiveDAGVisualizerApp:
         ttk.Label(self.control_frame, text="File:").pack(side=tk.LEFT, padx=(0,1))
         file_name = os.path.basename(file_path) if file_path else "No file selected"
         ttk.Label(self.control_frame, text=file_name).pack(side=tk.LEFT)
-
-        # Weight file info
-        ttk.Label(self.control_frame, text=" | Weights:").pack(side=tk.LEFT, padx=(10,1))
-        weight_file = os.path.basename(weights_file_path) if weights_file_path else "No weights file"
-        self.weight_file_label = ttk.Label(self.control_frame, text=weight_file)
-        self.weight_file_label.pack(side=tk.LEFT)
 
         # Add an extending spacer
         ttk.Label(self.control_frame, text="").pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -328,47 +148,6 @@ class InteractiveDAGVisualizerApp:
         self.next_button = ttk.Button(self.control_frame, text="Next", command=self.next_pattern)
         self.next_button.pack(side=tk.LEFT, padx=10)
         
-        # Weight control frame (add this new section)
-        self.weight_frame = ttk.Frame(root, padding="5")
-        self.weight_frame.pack(fill=tk.X)
-        
-        ttk.Label(self.weight_frame, text="Node Weights:").pack(side=tk.LEFT, padx=(10,5))
-        
-        # Range for weights
-        ttk.Label(self.weight_frame, text="Min:").pack(side=tk.LEFT, padx=(5,1))
-        self.min_weight_var = tk.StringVar(value=str(self.weight_range[0]))
-        self.min_weight_entry = ttk.Entry(self.weight_frame, textvariable=self.min_weight_var, width=3)
-        self.min_weight_entry.pack(side=tk.LEFT)
-        
-        ttk.Label(self.weight_frame, text="Max:").pack(side=tk.LEFT, padx=(5,1))
-        self.max_weight_var = tk.StringVar(value=str(self.weight_range[1]))
-        self.max_weight_entry = ttk.Entry(self.weight_frame, textvariable=self.max_weight_var, width=3)
-        self.max_weight_entry.pack(side=tk.LEFT)
-        
-        # Button to shuffle weights
-        self.shuffle_button = ttk.Button(self.weight_frame, text="Shuffle Weights", 
-                                         command=self.shuffle_weights)
-        self.shuffle_button.pack(side=tk.LEFT, padx=10)
-        
-        # Button to save weights
-        self.save_weights_button = ttk.Button(self.weight_frame, text="Save All Weights", 
-                                              command=self.save_all_weights)
-        self.save_weights_button.pack(side=tk.LEFT, padx=10)
-        
-        # Toggle to show weights as labels
-        self.show_weights_var = tk.BooleanVar(value=True)
-        self.show_weights_check = ttk.Checkbutton(
-            self.weight_frame, 
-            text="Show Weights", 
-            variable=self.show_weights_var,
-            command=self.update_plot
-        )
-        self.show_weights_check.pack(side=tk.LEFT, padx=5)
-        
-        # Weight sum display
-        self.weight_sum_label = ttk.Label(self.weight_frame, text="Critical Path Delay: 0")
-        self.weight_sum_label.pack(side=tk.LEFT, padx=(20,5))
-        
         # Layout selector
         ttk.Label(self.control_frame, text="Layout:").pack(side=tk.LEFT, padx=(10,5))
         self.layout_var = tk.StringVar(value="dot")
@@ -384,6 +163,10 @@ class InteractiveDAGVisualizerApp:
         # Reset view button
         self.reset_view_button = ttk.Button(self.control_frame, text="Reset View", command=self.reset_view)
         self.reset_view_button.pack(side=tk.LEFT, padx=10)
+        
+        # Shuffle weights button
+        self.shuffle_button = ttk.Button(self.control_frame, text="Shuffle Weights", command=self.shuffle_weights)
+        self.shuffle_button.pack(side=tk.LEFT, padx=10)
         
         # Layout info button
         self.layout_info_button = ttk.Button(self.control_frame, text="?", width=2, 
@@ -584,131 +367,20 @@ class InteractiveDAGVisualizerApp:
             node_idx = ind['ind'][0] if len(ind['ind']) > 0 else None
             
             if node_idx is not None and node_idx < len(self.current_nodes):
-                node = self.current_nodes[node_idx]
-                
-                # Right-click for editing weight
-                if event.button == 3:  # Right mouse button
-                    # Disable any active toolbar modes
-                    if current_mode:
-                        self.toolbar.pan()
-                        self.toolbar.pan()  # Toggle twice to disable
-                    
-                    self.start_weight_editing(node)
-                    return
-                
-                # Middle-click for dragging node
                 # Disable any active toolbar modes for node dragging
                 if current_mode:
                     self.toolbar.pan()
                     self.toolbar.pan()  # Toggle twice to disable
                 
                 self.dragging = True
-                self.drag_node = node
+                self.drag_node = self.current_nodes[node_idx]
                 self.last_click_pos = (event.xdata, event.ydata)
                 
                 # Set the cursor to indicate dragging
                 self.canvas.get_tk_widget().configure(cursor="fleur")
     
-    def start_weight_editing(self, node):
-        """Start editing the weight of a node"""
-        if self.editing_weight:
-            self.cancel_weight_editing()
-            
-        G = self.graphs[self.current_pattern_idx]
-        current_weight = G.nodes[node].get('weight', 1)
-        
-        # Get node position in screen coordinates
-        pos = nx.get_node_attributes(G, 'pos')[node]
-        bbox = self.ax.transData.transform(pos)
-        
-        # Create a text entry widget at the node's position
-        self.edit_node = node
-        self.editing_weight = True
-        
-        # Create a small frame for the entry
-        edit_frame = ttk.Frame(self.canvas.get_tk_widget())
-        
-        # Create the entry widget
-        entry = ttk.Entry(edit_frame, width=5)
-        entry.insert(0, str(current_weight))
-        entry.pack(padx=2, pady=2)
-        entry.focus_set()
-        
-        # Position it over the node
-        canvas_x, canvas_y = self.canvas.get_tk_widget().winfo_rootx(), self.canvas.get_tk_widget().winfo_rooty()
-        window = self.canvas.get_tk_widget().winfo_toplevel()
-        window_x, window_y = window.winfo_x(), window.winfo_y()
-        
-        # Position the entry directly over the node
-        x_pos = canvas_x + bbox[0] - 15  # Adjust for entry size
-        y_pos = canvas_y + bbox[1] - 10
-        
-        edit_frame.place(x=bbox[0]-15, y=bbox[1]-10)
-        
-        self.weight_entry = entry
-        
-        # Bind events to handle weight editing
-        entry.bind("<Return>", self.apply_weight_edit)
-        entry.bind("<Escape>", self.cancel_weight_editing)
-        entry.bind("<FocusOut>", self.cancel_weight_editing)
-        
-    def apply_weight_edit(self, event=None):
-        """Apply the weight edit to the node"""
-        if not self.editing_weight or self.edit_node is None:
-            return
-            
-        try:
-            # Get the new weight from the entry
-            new_weight = int(self.weight_entry.get())
-            
-            # Ensure weight is within the allowed range
-            min_val, max_val = self.weight_range
-            if new_weight < min_val:
-                new_weight = min_val
-            elif new_weight > max_val:
-                new_weight = max_val
-                
-            # Apply the new weight
-            G = self.graphs[self.current_pattern_idx]
-            G.nodes[self.edit_node]['weight'] = new_weight
-            
-            # Clean up the editing interface
-            if self.weight_entry and self.weight_entry.winfo_exists():
-                self.weight_entry.master.destroy()
-                
-            self.editing_weight = False
-            self.weight_entry = None
-            self.edit_node = None
-            
-            # Update the graph display
-            self.update_plot()
-            
-        except (ValueError, TypeError):
-            # If the input is not a valid integer, cancel editing
-            self.cancel_weight_editing()
-    
-    def cancel_weight_editing(self, event=None):
-        """Cancel the weight editing and restore the display"""
-        if self.weight_entry and self.weight_entry.winfo_exists():
-            self.weight_entry.master.destroy()
-            
-        self.editing_weight = False
-        self.weight_entry = None
-        self.edit_node = None
-        
-        # Update the plot to restore the hover state if needed
-        if self.hover_node is not None:
-            self.highlight_connected_nodes(self.hover_node)
-        else:
-            self.update_plot(no_draw=True)
-            self.canvas.draw()
-
     def on_motion(self, event):
         """Handle mouse movement for node dragging and hovering"""
-        # Don't process motion events if we're editing a weight
-        if self.editing_weight:
-            return
-            
         if not hasattr(self, 'node_collection'):
             return
             
@@ -781,16 +453,6 @@ class InteractiveDAGVisualizerApp:
                     predecessors = list(G.predecessors(closest_node))
                     successors = list(G.successors(closest_node))
                     
-                    # Get node weight
-                    weight = G.nodes[closest_node].get('weight', 1)
-                    
-                    # Update the hover info display
-                    info_text = f"Node {closest_node} - Weight: {weight} | "
-                    if predecessors:
-                        info_text += f"Inputs: {', '.join(map(str, predecessors))} | "
-                    if successors:
-                        info_text += f"Outputs: {', '.join(map(str, successors))}"
-                    
                     # Calculate path lengths
                     paths_from_input = []
                     if closest_node != 0 and nx.has_path(G, 0, closest_node):
@@ -841,16 +503,12 @@ class InteractiveDAGVisualizerApp:
                     self.highlight_connected_nodes(closest_node)
                 else:
                     # Reset to default display
-                    self.hover_label.config(text="Hover over a node to see connections | Right-click to edit weight | Drag nodes using middle click | Use left/right click for pan/zoom")
+                    self.hover_label.config(text="Hover over a node to see connections | Drag nodes using middle click to reposition | Use left/right click for pan/zoom")
                     self.update_plot(no_draw=True)
                     self.canvas.draw()
     
     def on_release(self, event):
         """Handle mouse release to stop node dragging or panning"""
-        # Don't process release events if we're editing a weight
-        if self.editing_weight:
-            return
-            
         cursor_reset = False
         
         if self.dragging:
@@ -904,7 +562,7 @@ class InteractiveDAGVisualizerApp:
     def highlight_connected_nodes(self, focus_node):
         """Highlight nodes connected to the focus node"""
         G = self.graphs[self.current_pattern_idx]
-        critical_paths, _ = find_all_critical_paths(G)
+        critical_path, _ = find_critical_path(G)
         
         # First, redraw with the standard coloring
         self.update_plot(no_draw=True)
@@ -915,9 +573,6 @@ class InteractiveDAGVisualizerApp:
         
         # Get the current positions
         pos = nx.get_node_attributes(G, 'pos')
-        
-        # Get node weight
-        weight = G.nodes[focus_node].get('weight', 1)
         
         # Redraw the focused node with a highlight
         nx.draw_networkx_nodes(G, pos,
@@ -962,15 +617,20 @@ class InteractiveDAGVisualizerApp:
                                   arrowsize=15,
                                   ax=self.ax)
         
-        # Add weight label to the focused node
-        if self.show_weights_var.get():
-            nx.draw_networkx_labels(G, pos, 
-                                   labels={focus_node: f"{focus_node}\n({weight})"},
-                                   font_weight='normal',
-                                   ax=self.ax)
-        
         # Redraw the canvas
         self.canvas.draw()
+
+    def shuffle_weights(self):
+        """
+        Assign a random weight (e.g., between 1 and 10) to each node in the current graph.
+        Then update the plot to reflect the new weights and re-compute the critical path.
+        """
+        G = self.graphs[self.current_pattern_idx]
+        for node in G.nodes():
+            # Assign a random integer weight between 1 and 10
+            G.nodes[node]['weight'] = random.randint(1, 10)
+        # Update the plot so that new weights and critical path are shown
+        self.update_plot()
 
     def update_plot(self, event=None, no_draw=False):
         """Update the plot with the current pattern"""
@@ -995,7 +655,7 @@ class InteractiveDAGVisualizerApp:
             
             try:
                 # Generate layout based on selected type
-                if (layout_type == "dot"):
+                if layout_type == "dot":
                     pos = self.hierarchical_layout(G, horizontal=True)
                 elif layout_type == "circo":
                     pos = nx.circular_layout(G)
@@ -1023,55 +683,43 @@ class InteractiveDAGVisualizerApp:
                 pos = nx.spring_layout(G, seed=42)
                 nx.set_node_attributes(G, pos, 'pos')
         
-        # Find ALL critical paths considering node weights
-        critical_paths, path_weight = find_all_critical_paths(G)
-        num_critical_paths = len(critical_paths)
+        # Find critical path
+        critical_path, path_length = find_critical_path(G)
         
-        # Get node weights
-        weights = {node: G.nodes[node].get('weight', 1) for node in G.nodes()}
-        
-        # Set node colors and sizes based on weights
+        # Set node colors
         node_colors = []
-        node_sizes = []
-        base_size = 500
-        
-        # Collect all nodes that appear in any critical path
-        critical_path_nodes = set()
-        for path in critical_paths:
-            critical_path_nodes.update(path)
-        
         for node in G.nodes():
-            weight = weights[node]
-            # Size variation based on weight
-            size = base_size + (weight - self.weight_range[0]) * 30
-            node_sizes.append(size)
-            
             if node == 0:  # Input node
                 node_colors.append('green')
             elif node == 1:  # Output node
                 node_colors.append('red')
-            elif node in critical_path_nodes:  # On any critical path
+            elif critical_path and node in critical_path:  # On critical path
                 node_colors.append('orange')
             else:  # Other nodes
                 node_colors.append('skyblue')
         
-        # Set edge colors - collect all critical path edges
-        critical_path_edges = set()
-        for path in critical_paths:
-            for i in range(len(path) - 1):
-                critical_path_edges.add((path[i], path[i+1]))
-        
+        # Set edge colors
         edge_colors = []
         for u, v in G.edges():
-            if (u, v) in critical_path_edges:
-                edge_colors.append('red')  # On a critical path
+            if critical_path and u in critical_path and v in critical_path and critical_path.index(v) == critical_path.index(u) + 1:
+                edge_colors.append('red')  # On critical path
             else:
                 edge_colors.append('gray')
+                
+        # Prepare labels that include the node weight if available
+        labels = {}
+        for node in G.nodes():
+            node_weight = G.nodes[node].get('weight', None)
+            if node_weight is not None:
+                labels[node] = f"{node}\n({node_weight})"
+            else:
+                labels[node] = str(node)
+        nx.draw_networkx_labels(G, pos, labels, font_weight='bold', ax=self.ax)
         
-        # Draw nodes with sizes based on weights
+        # Draw nodes
         self.node_collection = nx.draw_networkx_nodes(G, pos, 
                                                     node_color=node_colors, 
-                                                    node_size=node_sizes, 
+                                                    node_size=500, 
                                                     ax=self.ax)
         
         # Store current nodes list for interaction
@@ -1084,13 +732,8 @@ class InteractiveDAGVisualizerApp:
                               arrowsize=15,
                               ax=self.ax)
         
-        # Draw labels, including weights if enabled
-        if self.show_weights_var.get():
-            labels = {node: f"{node}\n({weights[node]})" for node in G.nodes()}
-        else:
-            labels = {node: f"{node}" for node in G.nodes()}
-        
-        nx.draw_networkx_labels(G, pos, labels=labels, font_weight='normal', ax=self.ax)
+        # Draw labels
+        nx.draw_networkx_labels(G, pos, font_weight='bold', ax=self.ax)
         
         # Set title and remove axis
         self.ax.set_title(f"Pattern {self.current_pattern_idx} - {self.current_layout.capitalize()} Layout")
@@ -1107,34 +750,11 @@ class InteractiveDAGVisualizerApp:
         self.edge_label.config(text=f"Edges: {G.number_of_edges()}")
         self.dag_label.config(text=f"Is DAG: {'Yes' if is_dag else 'No'}")
         
-        # Update critical path info with support for multiple paths
-        if critical_paths:
-            if num_critical_paths == 1:
-                path_str = " → ".join([f"{node}({weights[node]})" for node in critical_paths[0]])
-                self.path_label.config(text=f"Critical Path: {path_str}")
-            else:
-                # Format for multiple paths
-                paths_str = f"Critical Paths ({num_critical_paths}):\n"
-                for i, path in enumerate(critical_paths[:5]):  # Limit display to first 5 paths if there are many
-                    path_str = " → ".join([f"{node}({weights[node]})" for node in path])
-                    paths_str += f"  {i+1}: {path_str}\n"
-                
-                if num_critical_paths > 5:
-                    paths_str += f"  ... and {num_critical_paths - 5} more"
-                    
-                self.path_label.config(text=paths_str)
-            
-            # Update weight sum label with count of paths
-            if num_critical_paths > 1:
-                self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight} ({num_critical_paths} paths)")
-            else:
-                self.weight_sum_label.config(text=f"Critical Path Delay: {path_weight}")
+        if critical_path:
+            path_str = " → ".join(map(str, critical_path))
+            self.path_label.config(text=f"Critical Path: {path_str} (Length: {path_length})")
         else:
             self.path_label.config(text=f"Critical Path: None")
-            self.weight_sum_label.config(text=f"Critical Path Delay: 0")
-        
-        # Update hover label to include weight editing info
-        self.hover_label.config(text="Hover over a node to see connections | Right-click to edit weight | Drag nodes using middle click | Use left/right click for pan/zoom")
         
         # Redraw canvas unless we're just updating for hover highlighting
         if not no_draw:
@@ -1191,10 +811,6 @@ class InteractiveDAGVisualizerApp:
             "• twopi: Shell layout - Nodes arranged in concentric circles\n"
             "• circo: Circular layout - All nodes arranged in a single circle\n"
             "• spring: Standard spring layout with moderate settings\n\n"
-            "Node Weights:\n"
-            "• Node size reflects weight value\n"
-            "• Critical path now finds the path with maximum total weight\n"
-            "• Shuffle Weights button randomizes weights within specified range\n\n"
             "Interactive Features:\n"
             "• Drag nodes using middle click to reposition them\n"
             "• Use the left/right click to pan and zoom\n"
@@ -1203,69 +819,12 @@ class InteractiveDAGVisualizerApp:
         )
         messagebox.showinfo("Layout & Interactive Features", layout_info)
 
-    def save_all_weights(self):
-        """Save all weights for all patterns to the weights file"""
-        if not self.weights_file_path:
-            self.weights_file_path = "input_weights.txt"
-        
-        # Collect current weights from all graphs
-        all_weights = []
-        for i, G in enumerate(self.graphs):
-            weights = {}
-            # Ensure we have weights for all nodes 0-15
-            for node_idx in range(16):
-                # If the node exists in the graph, use its weight
-                if node_idx in G.nodes():
-                    weights[node_idx] = G.nodes[node_idx].get('weight', random.randint(*self.weight_range))
-                else:
-                    # If the node doesn't exist in this pattern, use a random weight
-                    weights[node_idx] = random.randint(*self.weight_range)
-            all_weights.append(weights)
-        
-        # Write weights to file
-        try:
-            write_weights(self.weights_file_path, all_weights, len(self.patterns))
-            messagebox.showinfo("Success", f"Weights saved to {self.weights_file_path}")
-            
-            # Update the weight file label
-            weight_file = os.path.basename(self.weights_file_path)
-            self.weight_file_label.config(text=weight_file)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save weights: {str(e)}")
-    
-    def shuffle_weights(self):
-        """Reassign random weights to the current graph"""
-        try:
-            # Get min and max values from entries
-            min_val = int(self.min_weight_var.get())
-            max_val = int(self.max_weight_var.get())
-            
-            # Ensure min <= max
-            if min_val > max_val:
-                min_val, max_val = max_val, min_val
-                self.min_weight_var.set(str(min_val))
-                self.max_weight_var.set(str(max_val))
-            
-            # Update weight range
-            self.weight_range = (min_val, max_val)
-            
-            # Reassign weights to the current graph
-            G = self.graphs[self.current_pattern_idx]
-            assign_random_weights(G, min_val, max_val)
-            
-            # Update the plot
-            self.update_plot()
-            
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Please enter valid integer values for min and max weights.")
-
 def main():
     from argparse import ArgumentParser
     
     parser = ArgumentParser(description="Interactive DAG Visualizer")
     parser.add_argument("file_path", help="Path to the input file with DAG patterns")
     parser.add_argument("--limit", type=int, default=None, help="Limit the number of patterns to process")
-    parser.add_argument("--weights", default="input_weights.txt", help="Path to the node weights file (default: input_weights.txt)")
     
     args = parser.parse_args()
     
@@ -1281,39 +840,9 @@ def main():
         else:
             print(f"Found {len(patterns)} patterns")
         
-        # Read or generate weights
-        weights = None
-        weights_file_path = args.weights
-        
-        if os.path.exists(weights_file_path):
-            print(f"Reading weights from {weights_file_path}...")
-            weights = read_weights(weights_file_path)
-            
-            # Add debug output to check weight loading
-            if weights:
-                print(f"Successfully loaded {len(weights)} weight sets")
-                print(f"Sample weights from first pattern: {list(weights[0].items())[:5]}")
-            else:
-                print("Failed to load any weights from file")
-            
-            # Check if weights match patterns
-            if weights and len(weights) != len(patterns):
-                print(f"Warning: Number of weight sets ({len(weights)}) doesn't match number of patterns ({len(patterns)})")
-                print("Generating new random weights...")
-                weights = None
-        
-        # Generate weights if needed
-        if not weights:
-            print(f"Generating random weights for {len(patterns)} patterns...")
-            weights = generate_random_weights(len(patterns), num_nodes=16)
-            
-            # Write weights to file
-            print(f"Saving weights to {weights_file_path}...")
-            write_weights(weights_file_path, weights, len(patterns))
-        
         # Create and run the GUI
         root = tk.Tk()
-        app = InteractiveDAGVisualizerApp(root, patterns, args.file_path, weights, weights_file_path)
+        app = InteractiveDAGVisualizerApp(root, patterns, args.file_path)
         root.mainloop()
         
     except Exception as e:
