@@ -87,17 +87,6 @@ def find_critical_path(G):
     return path, dist[1]
 
 class InteractiveDAGVisualizerApp:
-    def layout_selector_changed(self, event):
-        """Handle layout selection change"""
-        # Only regenerate layout if it actually changed
-        G = self.graphs[self.current_pattern_idx]
-        current_layout = getattr(G, 'current_layout', None)
-        new_layout = self.layout_var.get()
-        
-        if current_layout != new_layout:
-            # Force update with new layout
-            self.update_plot(force_layout=True)
-            
     def __init__(self, root, patterns, file_path=None):
         self.root = root
         self.patterns = patterns  # list of pattern edge lists
@@ -167,7 +156,7 @@ class InteractiveDAGVisualizerApp:
             width=10
         )
         self.layout_selector.pack(side=tk.LEFT)
-        self.layout_selector.bind("<<ComboboxSelected>>", self.layout_selector_changed)
+        self.layout_selector.bind("<<ComboboxSelected>>", self.update_plot)
         
         # Reset view button
         self.reset_view_button = ttk.Button(self.control_frame, text="Reset View", command=self.reset_view)
@@ -608,7 +597,7 @@ class InteractiveDAGVisualizerApp:
         # Redraw the canvas
         self.canvas.draw()
 
-    def update_plot(self, event=None, no_draw=False, force_layout=False):
+    def update_plot(self, event=None, no_draw=False):
         """Update the plot with the current pattern"""
         # Store current axis limits before clearing if we want to preserve the view
         prev_xlim = self.ax.get_xlim() if hasattr(self.ax, 'get_xlim') else None
@@ -621,11 +610,7 @@ class InteractiveDAGVisualizerApp:
         
         # Calculate node positions based on selected layout or use stored positions
         pos = nx.get_node_attributes(G, 'pos')
-        layout_status = getattr(G, 'current_layout', 'custom')  # Default layout status
-        
-        # If positions don't exist, force_layout is True, or the layout has changed, generate new layout
-        layout_type = self.layout_var.get()
-        if not pos or force_layout or not hasattr(G, 'current_layout') or G.current_layout != layout_type:
+        if not pos:  # If positions are not already stored (first time or reset)
             layout_type = self.layout_var.get()
             
             try:
@@ -700,7 +685,8 @@ class InteractiveDAGVisualizerApp:
         # Draw labels
         nx.draw_networkx_labels(G, pos, font_weight='bold', ax=self.ax)
         
-        self.ax.set_title(f"Pattern {self.current_pattern_idx} - Layout: {layout_status}")
+        # Set title and remove axis
+        self.ax.set_title(f"Pattern {self.current_pattern_idx} - Interactive View")
         self.ax.axis('off')
         
         # Restore previous view limits if available and not doing a full reset
