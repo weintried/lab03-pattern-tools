@@ -137,14 +137,14 @@ def write_weights(file_path, all_weights, num_patterns):
                     weight = weights[node_idx]
                 else:
                     # This shouldn't happen with proper weight initialization, but just in case
-                    weight = random.randint(1, 10)
+                    weight = random.randint(0, 15)
                     
                 f.write(f"{weight}\n")
             
             # Add blank line between patterns
             f.write("\n")
 
-def generate_random_weights(num_patterns, num_nodes=16, min_val=1, max_val=10):
+def generate_random_weights(num_patterns, num_nodes=16, min_val=0, max_val=15):
     """
     Generate random weights for all nodes in all patterns.
     
@@ -231,7 +231,7 @@ def find_critical_path(G):
         return paths[0], weight
     return None, 0
 
-def assign_random_weights(G, min_val=1, max_val=10):
+def assign_random_weights(G, min_val=0, max_val=15):
     """
     Assign random weights to nodes in the graph.
     """
@@ -258,7 +258,7 @@ class InteractiveDAGVisualizerApp:
         self.current_pattern_idx = 0
         self.graphs = []  # Store NetworkX graph objects
         self.current_layout = "dot"  # Track the current layout
-        self.weight_range = (1, 10)  # Default range for random weights
+        self.weight_range = (0, 15)  # Default range for random weights
         # self.edge_style = "diagonal"  # New attribute to track edge style
         self.edge_style = "orthogonal"  # New attribute to track edge style
         
@@ -823,7 +823,7 @@ class InteractiveDAGVisualizerApp:
                     paths_from_input = []
                     if closest_node != 0 and nx.has_path(G, 0, closest_node):
                         try:
-                            paths = list(nx.all_simple_paths(G, 0, closest_node, cutoff=10))
+                            paths = list(nx.all_simple_paths(G, 0, closest_node, cutoff=15))
                             if paths:
                                 paths_from_input = [(p, len(p)-1) for p in paths]
                                 paths_from_input.sort(key=lambda x: x[1], reverse=True)
@@ -837,7 +837,7 @@ class InteractiveDAGVisualizerApp:
                     paths_to_output = []
                     if closest_node != 1 and nx.has_path(G, closest_node, 1):
                         try:
-                            paths = list(nx.all_simple_paths(G, closest_node, 1, cutoff=10))
+                            paths = list(nx.all_simple_paths(G, closest_node, 1, cutoff=15))
                             if paths:
                                 paths_to_output = [(p, len(p)-1) for p in paths]
                                 paths_to_output.sort(key=lambda x: x[1], reverse=True)
