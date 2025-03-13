@@ -6,6 +6,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import random
+from matplotlib.path import Path
+import matplotlib.patches as patches
 
 def read_patterns(file_path):
     """
@@ -257,6 +259,8 @@ class InteractiveDAGVisualizerApp:
         self.graphs = []  # Store NetworkX graph objects
         self.current_layout = "dot"  # Track the current layout
         self.weight_range = (1, 10)  # Default range for random weights
+        # self.edge_style = "diagonal"  # New attribute to track edge style
+        self.edge_style = "orthogonal"  # New attribute to track edge style
         
         # Interactive state tracking
         self.hover_node = None  # Currently hovered node
@@ -455,6 +459,21 @@ class InteractiveDAGVisualizerApp:
         # Display the first pattern
         self.update_plot()
         self.update_button_states()
+        
+        # Add edge style toggle
+        self.edge_style_var = tk.StringVar(value=self.edge_style)
+        self.edge_style_label = ttk.Label(self.weight_frame, text="Edge Style:")
+        self.edge_style_label.pack(side=tk.LEFT, padx=(20,5))
+        
+        self.edge_style_combo = ttk.Combobox(
+            self.weight_frame,
+            textvariable=self.edge_style_var,
+            values=["orthogonal", "diagonal"],
+            width=10,
+            state="readonly"
+        )
+        self.edge_style_combo.pack(side=tk.LEFT)
+        self.edge_style_combo.bind("<<ComboboxSelected>>", self.change_edge_style)
     
     def change_layout(self, event=None):
         """Handle layout change events."""
@@ -946,13 +965,22 @@ class InteractiveDAGVisualizerApp:
                                   ax=self.ax)
             
             # Highlight edges from predecessors
-            edges = [(u, focus_node) for u in predecessors]
-            nx.draw_networkx_edges(G, pos,
-                                  edgelist=edges,
-                                  edge_color='green',
-                                  width=2.0,
-                                  arrowsize=15,
-                                  ax=self.ax)
+            pred_edges = [(u, focus_node) for u in predecessors]
+            if self.edge_style == "diagonal":
+                nx.draw_networkx_edges(G, pos,
+                                      edgelist=pred_edges,
+                                      edge_color='green',
+                                      width=2.0,
+                                      arrowsize=15,
+                                      ax=self.ax)
+            else:
+                # Draw orthogonal edges with green color
+                for u in predecessors:
+                    path = self.create_orthogonal_path(pos[u], pos[focus_node])
+                    for j in range(len(path) - 1):
+                        x1, y1 = path[j]
+                        x2, y2 = path[j+1]
+                        self.ax.plot([x1, x2], [y1, y2], color='green', linewidth=2.0, zorder=2)
         
         # Highlight successor nodes
         if successors:
@@ -963,13 +991,22 @@ class InteractiveDAGVisualizerApp:
                                   ax=self.ax)
             
             # Highlight edges to successors
-            edges = [(focus_node, v) for v in successors]
-            nx.draw_networkx_edges(G, pos,
-                                  edgelist=edges,
-                                  edge_color='blue',
-                                  width=2.0,
-                                  arrowsize=15,
-                                  ax=self.ax)
+            succ_edges = [(focus_node, v) for v in successors]
+            if self.edge_style == "diagonal":
+                nx.draw_networkx_edges(G, pos,
+                                      edgelist=succ_edges,
+                                      edge_color='blue',
+                                      width=2.0,
+                                      arrowsize=15,
+                                      ax=self.ax)
+            else:
+                # Draw orthogonal edges with blue color
+                for v in successors:
+                    path = self.create_orthogonal_path(pos[focus_node], pos[v])
+                    for j in range(len(path) - 1):
+                        x1, y1 = path[j]
+                        x2, y2 = path[j+1]
+                        self.ax.plot([x1, x2], [y1, y2], color='blue', linewidth=2.0, zorder=2)
         
         # Add weight label to the focused node
         if self.show_weights_var.get():
@@ -1096,12 +1133,14 @@ class InteractiveDAGVisualizerApp:
                 critical_path_edges[edge].append(i)
         
         edge_colors = []
+        highlighted_edges = []
         for u, v in G.edges():
             edge = (u, v)
             if edge in critical_path_edges:
                 # If highlighted path is set, use that path's color
                 if prev_highlighted is not None and prev_highlighted in critical_path_edges[edge]:
                     edge_colors.append(self.critical_path_colors[prev_highlighted])
+                    highlighted_edges.append(edge)
                 else:
                     # If edge is in multiple paths, use red as a generic color
                     if len(critical_path_edges[edge]) > 1:
@@ -1122,12 +1161,8 @@ class InteractiveDAGVisualizerApp:
         # Store current nodes list for interaction
         self.current_nodes = list(G.nodes())
         
-        # Draw edges
-        nx.draw_networkx_edges(G, pos, 
-                             edge_color=edge_colors, 
-                             width=1.5, 
-                             arrowsize=15,
-                             ax=self.ax)
+        # Draw edges with selected style
+        self.draw_edges(G, pos, edge_colors=edge_colors, highlighted_edges=highlighted_edges, ax=self.ax)
         
         # Draw labels, including weights if enabled
         if self.show_weights_var.get():
@@ -1138,7 +1173,8 @@ class InteractiveDAGVisualizerApp:
         nx.draw_networkx_labels(G, pos, labels=labels, font_weight='normal', ax=self.ax)
         
         # Set title and remove axis
-        self.ax.set_title(f"Pattern {self.current_pattern_idx} - {self.current_layout.capitalize()} Layout")
+        edge_style_text = "Orthogonal" if self.edge_style == "orthogonal" else "Diagonal" 
+        self.ax.set_title(f"Pattern {self.current_pattern_idx} - {self.current_layout.capitalize()} Layout ({edge_style_text} Edges)")
         self.ax.axis('off')
         
         # Restore previous view limits if available and preserving view
@@ -1221,6 +1257,9 @@ class InteractiveDAGVisualizerApp:
             "• twopi: Shell layout - Nodes arranged in concentric circles\n"
             "• circo: Circular layout - All nodes arranged in a single circle\n"
             "• spring: Standard spring layout with moderate settings\n\n"
+            "Edge Styles:\n"
+            "• diagonal: Standard straight lines between nodes\n"
+            "• orthogonal: Horizontal and vertical lines only (like a schematic)\n\n"
             "Node Weights:\n"
             "• Node size reflects weight value\n"
             "• Critical path now finds the path with maximum total weight\n"
@@ -1358,14 +1397,28 @@ class InteractiveDAGVisualizerApp:
             
             # Draw edges along this path with the path's color
             critical_edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
-            nx.draw_networkx_edges(G, pos, 
-                                  edgelist=critical_edges,
-                                  edge_color=color,
-                                  width=3.0,  # Thicker line for emphasis
-                                  arrowsize=20,
-                                  ax=self.ax)
             
-            # Draw labels for nodes on this path (with normal weight, not bold)
+            if self.edge_style == "diagonal":
+                # Standard edge drawing
+                nx.draw_networkx_edges(G, pos, 
+                                      edgelist=critical_edges,
+                                      edge_color=color,
+                                      width=3.0,  # Thicker line for emphasis
+                                      arrowsize=20,
+                                      ax=self.ax)
+            else:
+                # Draw orthogonal edges
+                for i in range(len(path)-1):
+                    u, v = path[i], path[i+1]
+                    ortho_path = self.create_orthogonal_path(pos[u], pos[v])
+                    
+                    # Draw each segment of the path
+                    for j in range(len(ortho_path) - 1):
+                        x1, y1 = ortho_path[j]
+                        x2, y2 = ortho_path[j+1]
+                        self.ax.plot([x1, x2], [y1, y2], color=color, linewidth=3.0, zorder=3)
+            
+            # Draw labels for nodes on this path
             if self.show_weights_var.get():
                 labels = {node: f"{node}\n({weights[node]})" for node in critical_nodes}
             else:
@@ -1373,12 +1426,85 @@ class InteractiveDAGVisualizerApp:
                 
             nx.draw_networkx_labels(G, pos, 
                                    labels=labels,
-                                   font_weight='normal',  # Changed from 'bold' to 'normal'
+                                   font_weight='normal',
                                    font_size=12,
                                    ax=self.ax)
         
         self.canvas.draw()
     
+    def create_orthogonal_path(self, start_pos, end_pos):
+        """Create an orthogonal path between two points."""
+        # Extract coordinates
+        x1, y1 = start_pos
+        x2, y2 = end_pos
+        
+        # Determine if the path should go horizontal first or vertical first
+        if abs(x2 - x1) > abs(y2 - y1):
+            # Go horizontal first (more horizontal distance than vertical)
+            mid_x = (x1 + x2) / 2
+            path = [(x1, y1), (mid_x, y1), (mid_x, y2), (x2, y2)]
+        else:
+            # Go vertical first (more vertical distance than horizontal)
+            mid_y = (y1 + y2) / 2
+            path = [(x1, y1), (x1, mid_y), (x2, mid_y), (x2, y2)]
+        
+        return path
+    
+    def draw_edges(self, G, pos, edge_colors=None, highlighted_edges=None, ax=None):
+        """Draw edges using the current edge style."""
+        if ax is None:
+            ax = self.ax
+            
+        if edge_colors is None:
+            edge_colors = ['gray'] * len(G.edges())
+            
+        if highlighted_edges is None:
+            highlighted_edges = []
+            
+        if self.edge_style == "diagonal":
+            # Standard straight-line edges
+            nx.draw_networkx_edges(G, pos, 
+                                 edge_color=edge_colors, 
+                                 width=1.5, 
+                                 arrowsize=15,
+                                 ax=ax)
+        else:
+            # Orthogonal edges
+            # Create a collection of paths for each edge
+            for i, (u, v) in enumerate(G.edges()):
+                # Get edge color and width
+                color = edge_colors[i] if i < len(edge_colors) else 'gray'
+                width = 2.0 if (u, v) in highlighted_edges else 1.5
+                
+                # Create orthogonal path
+                path = self.create_orthogonal_path(pos[u], pos[v])
+                
+                # Draw path segments
+                for j in range(len(path) - 1):
+                    x1, y1 = path[j]
+                    x2, y2 = path[j+1]
+                    ax.plot([x1, x2], [y1, y2], color=color, linewidth=width, zorder=1)
+                
+                # Add arrow at the end
+                # Calculate arrow direction
+                last_segment = np.array(path[-1]) - np.array(path[-2])
+                if np.linalg.norm(last_segment) > 0:
+                    # Normalize direction vector
+                    direction = last_segment / np.linalg.norm(last_segment)
+                    
+                    # Arrow position - slightly before the endpoint
+                    arrow_pos = np.array(path[-1]) - 0.02 * direction
+                    
+                    # Create the arrow
+                    if direction[0] != 0:  # Horizontal arrow
+                        dx, dy = direction[0] * 0.02, 0
+                        ax.arrow(arrow_pos[0], arrow_pos[1], dx, dy, 
+                               head_width=0.015, head_length=0.02, fc=color, ec=color)
+                    else:  # Vertical arrow
+                        dx, dy = 0, direction[1] * 0.02
+                        ax.arrow(arrow_pos[0], arrow_pos[1], dx, dy, 
+                               head_width=0.015, head_length=0.02, fc=color, ec=color)
+
     def on_path_label_enter(self, event, path_idx):
         """Handle mouse entering a path label"""
         self.highlight_critical_path(path_idx)
@@ -1438,6 +1564,13 @@ class InteractiveDAGVisualizerApp:
             ttk.Label(self.path_container, 
                    text=f"... and {num_paths - max_to_show} more").pack(
                    side=tk.TOP, anchor=tk.W, padx=(15, 0))
+
+    def change_edge_style(self, event=None):
+        """Handle edge style change events."""
+        new_style = self.edge_style_var.get()
+        if new_style != self.edge_style:
+            self.edge_style = new_style
+            self.update_plot()
 
 def main():
     from argparse import ArgumentParser
@@ -1503,3 +1636,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
