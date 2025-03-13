@@ -1432,26 +1432,66 @@ class InteractiveDAGVisualizerApp:
         
         self.canvas.draw()
     
-    def create_orthogonal_path(self, start_pos, end_pos):
-        """Create an orthogonal path between two points."""
+    def create_orthogonal_path(self, start_pos, end_pos, edge_index=0, total_edges=1):
+        """Create an orthogonal path between two points with offset to avoid overlaps."""
         # Extract coordinates
         x1, y1 = start_pos
         x2, y2 = end_pos
         
-        # Determine if the path should go horizontal first or vertical first
-        if abs(x2 - x1) > abs(y2 - y1):
-            # Go horizontal first (more horizontal distance than vertical)
-            mid_x = (x1 + x2) / 2
-            path = [(x1, y1), (mid_x, y1), (mid_x, y2), (x2, y2)]
-        else:
-            # Go vertical first (more vertical distance than horizontal)
-            mid_y = (y1 + y2) / 2
-            path = [(x1, y1), (x1, mid_y), (x2, mid_y), (x2, y2)]
+        # Calculate a unique offset for this edge
+        # Use edge_index to create different paths for different edges
+        offset_factor = 0.03  # Base offset amount
         
+        # If we have multiple edges, distribute them
+        if total_edges > 1:
+            # Convert edge_index to a normalized offset (-0.5 to 0.5)
+            normalized_offset = (edge_index / (total_edges - 1) - 0.5) if total_edges > 1 else 0
+            offset = normalized_offset * offset_factor * (total_edges + 1)
+        else:
+            offset = 0
+        
+        # Determine if horizontal or vertical distance is greater
+        if abs(x2 - x1) > abs(y2 - y1):
+            # Horizontal dominant path
+            # Calculate the midpoint with offset
+            mid_x = (x1 + x2) / 2
+            
+            # Create a path with an offset in Y direction at the midpoint
+            if y1 != y2:  # Only add offset if there's a vertical component
+                path = [(x1, y1), 
+                       (mid_x, y1 + offset), 
+                       (mid_x, y2 - offset), 
+                       (x2, y2)]
+            else:
+                # Direct horizontal path with a slight bend to avoid overlaps
+                mid_y = y1 + offset
+                path = [(x1, y1), 
+                       (x1 + (x2-x1)/4, mid_y), 
+                       (x1 + 3*(x2-x1)/4, mid_y), 
+                       (x2, y2)]
+        else:
+            # Vertical dominant path
+            # Calculate the midpoint with offset
+            mid_y = (y1 + y2) / 2
+            
+            # Create a path with an offset in X direction at the midpoint
+            if x1 != x2:  # Only add offset if there's a horizontal component
+                path = [(x1, y1), 
+                       (x1 + offset, mid_y), 
+                       (x2 - offset, mid_y), 
+                       (x2, y2)]
+            else:
+                # Direct vertical path with a slight bend to avoid overlaps
+                mid_x = x1 + offset
+                path = [(x1, y1), 
+                       (mid_x, y1 + (y2-y1)/4), 
+                       (mid_x, y1 + 3*(y2-y1)/4), 
+                       (x2, y2)]
+                
         return path
     
     def draw_edges(self, G, pos, edge_colors=None, highlighted_edges=None, ax=None):
-        """Draw edges using the current edge style."""
+        """Draw edges using the current edge style with improved orthogonal routing."""
         if ax is None:
             ax = self.ax
             
@@ -1469,41 +1509,61 @@ class InteractiveDAGVisualizerApp:
                                  arrowsize=15,
                                  ax=ax)
         else:
-            # Orthogonal edges
-            # Create a collection of paths for each edge
-            for i, (u, v) in enumerate(G.edges()):
-                # Get edge color and width
-                color = edge_colors[i] if i < len(edge_colors) else 'gray'
-                width = 2.0 if (u, v) in highlighted_edges else 1.5
+            # Orthogonal edges with better routing
+            edge_list = list(G.edges())
+            
+            # Group edges by their source and target for better layout
+            # This helps us know when multiple edges connect the same pairs of nodes
+            edge_groups = {}
+            for i, (u, v) in enumerate(edge_list):
+                # Create a key that uniquely identifies source-target node pairs
+                src, tgt = pos[u], pos[v]
+                key = (round(src[0], 3), round(src[1], 3), round(tgt[0], 3), round(tgt[1], 3))
                 
-                # Create orthogonal path
-                path = self.create_orthogonal_path(pos[u], pos[v])
-                
-                # Draw path segments
-                for j in range(len(path) - 1):
-                    x1, y1 = path[j]
-                    x2, y2 = path[j+1]
-                    ax.plot([x1, x2], [y1, y2], color=color, linewidth=width, zorder=1)
-                
-                # Add arrow at the end
-                # Calculate arrow direction
-                last_segment = np.array(path[-1]) - np.array(path[-2])
-                if np.linalg.norm(last_segment) > 0:
-                    # Normalize direction vector
-                    direction = last_segment / np.linalg.norm(last_segment)
+                if key not in edge_groups:
+                    edge_groups[key] = []
+                edge_groups[key].append((i, u, v))
+            
+            # Draw each edge with appropriate offset based on its group
+            for key, edges in edge_groups.items():
+                for j, (i, u, v) in enumerate(edges):
+                    # Get edge color and width
+                    color = edge_colors[i] if i < len(edge_colors) else 'gray'
+                    width = 2.0 if (u, v) in highlighted_edges else 1.5
                     
-                    # Arrow position - slightly before the endpoint
-                    arrow_pos = np.array(path[-1]) - 0.02 * direction
+                    # Create orthogonal path with index-based offset to avoid overlaps
+                    path = self.create_orthogonal_path(pos[u], pos[v], j, len(edges))
                     
-                    # Create the arrow
-                    if direction[0] != 0:  # Horizontal arrow
-                        dx, dy = direction[0] * 0.02, 0
-                        ax.arrow(arrow_pos[0], arrow_pos[1], dx, dy, 
-                               head_width=0.015, head_length=0.02, fc=color, ec=color)
-                    else:  # Vertical arrow
-                        dx, dy = 0, direction[1] * 0.02
-                        ax.arrow(arrow_pos[0], arrow_pos[1], dx, dy, 
-                               head_width=0.015, head_length=0.02, fc=color, ec=color)
+                    # Draw path segments
+                    for j in range(len(path) - 1):
+                        x1, y1 = path[j]
+                        x2, y2 = path[j+1]
+                        ax.plot([x1, x2], [y1, y2], color=color, linewidth=width, zorder=1)
+                    
+                    # Add arrow at the end
+                    self.draw_edge_arrow(path[-2], path[-1], color, ax)
+    
+    def draw_edge_arrow(self, start_pos, end_pos, color, ax):
+        """Draw an arrow at the end of an edge segment."""
+        # Calculate direction vector
+        x1, y1 = start_pos
+        x2, y2 = end_pos
+        dx, dy = x2 - x1, y2 - y1
+        
+        # If the segment is too short, don't draw an arrow
+        length = np.sqrt(dx**2 + dy**2)
+        if length < 0.01:
+            return
+            
+        # Normalize direction
+        dx, dy = dx / length, dy / length
+        
+        # Position the arrow slightly before the end point
+        arrow_pos = (x2 - 0.02 * dx, y2 - 0.02 * dy)
+        
+        # Draw the arrow with appropriate direction
+        ax.arrow(arrow_pos[0], arrow_pos[1], 0.02 * dx, 0.02 * dy, 
+               head_width=0.015, head_length=0.02, fc=color, ec=color)
 
     def on_path_label_enter(self, event, path_idx):
         """Handle mouse entering a path label"""
