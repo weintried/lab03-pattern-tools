@@ -35,9 +35,9 @@ python viz.py <DAG檔案路徑> [--limit N] [--weights <權重檔案>] [--critic
 ```
 
 - `<DAG檔案路徑>`: 包含 DAG 模式定義的檔案（必須）
-- `--limit N`: 限制處理的模式數量（可選）
-- `--weights <權重檔案>`: 節點權重檔案路徑（預設: input_weights.txt）
-- `--critical-paths <關鍵路徑檔案>`: 儲存關鍵路徑的檔案路徑（預設: input_critical_path.txt）
+- `--limit N`: 限制處理的模式數量，預設就是跟著input.txt的1000筆
+- `--weights <權重檔案>`: 節點權重檔案路徑（若未提供會自動生成，預設檔名: input_weights.txt）
+- `--critical-paths <關鍵路徑檔案>`: 儲存關鍵路徑的檔案路徑（同上，預設檔名: input_critical_path.txt）
 
 ---
 
@@ -66,6 +66,8 @@ python viz.py <DAG檔案路徑> [--limit N] [--weights <權重檔案>] [--critic
 ---
 
 ## 📄 資料格式說明
+### 用法
+我自己是在PATTERN.v裡面寫個debug變數，如果設1就從外部讀檔案抓delay，0就是預設的隨機生成delay
 
 ### DAG 模式檔案格式 (.txt)
 ```
@@ -149,7 +151,7 @@ python viz.py <您的DAG檔案>.txt
 ### 🔹 **Linux/macOS（手動安裝）**
 對於 **Linux/macOS** 用戶，可以手動建立與啟動虛擬環境：
 
-#### 1️⃣ **建立虛擬環境**
+#### 1️⃣ **在這份資料夾下建立虛擬環境**
 ```sh
 python3 -m venv env
 ```
@@ -228,6 +230,13 @@ python viz.py <您的DAG檔案>.txt
 - **自定義權重範圍**：設定 Min 和 Max 值來控制節點權重範圍
 - **多種視圖模式**：嘗試不同的佈局演算法以找到最適合你的 DAG 結構的視圖
 - **路徑分析**：懸停在節點上可顯示從輸入到該節點以及從該節點到輸出的最長路徑
+
+---
+
+## 🪲 已知問題
+
+- 點擊節點修改delay，跳出來的文字框可能會亂跑
+- 有些pattern實在是很難搞，畫出來會有點難辨識，只能你自己拉動節點調整
 
 ---
 
