@@ -204,6 +204,13 @@ python viz.py <您的DAG檔案>.txt
 - **找不到虛擬環境？**
   - 請先執行 `setup_env.bat` 建立環境。
 
+- **setup_env.bat點擊後閃退？**
+  - 可以開啟終端到資料夾下面後，再手動呼叫一次setup_env.bat
+  - 如果在pip安裝過程中出現紅字，可能就是你的python版本太舊了
+
+- **為什麼沒有做版本測試？**
+    - 我懶
+
 - **networkx 套件安裝失敗？**
   - 嘗試先更新 pip：
     ```sh
