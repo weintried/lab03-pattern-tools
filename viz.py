@@ -248,12 +248,46 @@ def assign_weights_from_dict(G, weights_dict):
             G.nodes[node]['weight'] = weight
     return G
 
+def write_critical_paths(file_path, patterns_critical_paths, path_weights):
+    """
+    Write critical paths to the given file path in the required format.
+    
+    Args:
+        file_path: Path to write the critical paths file
+        patterns_critical_paths: List of lists of critical paths for each pattern
+        path_weights: List of path weights for each pattern
+    """
+    with open(file_path, 'w') as f:
+        # Write number of patterns
+        f.write(f"{len(patterns_critical_paths)}\n\n")
+        
+        # Write each pattern's critical paths
+        for pattern_idx, critical_paths in enumerate(patterns_critical_paths):
+            # Write pattern index
+            f.write(f"{pattern_idx}\n")
+            
+            # Write number of paths for this pattern
+            f.write(f"{len(critical_paths)}\n")
+            
+            # Write each path
+            for path in critical_paths:
+                # Format: <path_node_count> <node1> <node2> ... <nodeN> <total_weight>
+                path_weight = path_weights[pattern_idx]
+                f.write(f"{len(path)}")
+                for node in path:
+                    f.write(f" {node}")
+                f.write(f" {path_weight}\n")
+            
+            # Add blank line between patterns
+            f.write("\n")
+
 class InteractiveDAGVisualizerApp:
-    def __init__(self, root, patterns, file_path=None, weights=None, weights_file_path=None):
+    def __init__(self, root, patterns, file_path=None, weights=None, weights_file_path=None, critical_paths_file_path=None):
         self.root = root
         self.patterns = patterns  # list of pattern edge lists
         self.file_path = file_path
         self.weights_file_path = weights_file_path  # Path to weights file
+        self.critical_paths_file_path = critical_paths_file_path  # Path to critical paths file
         self.all_weights = weights  # List of weight dictionaries for all patterns
         self.current_pattern_idx = 0
         self.graphs = []  # Store NetworkX graph objects
@@ -312,6 +346,12 @@ class InteractiveDAGVisualizerApp:
         weight_file = os.path.basename(weights_file_path) if weights_file_path else "No weights file"
         self.weight_file_label = ttk.Label(self.control_frame, text=weight_file)
         self.weight_file_label.pack(side=tk.LEFT)
+        
+        # Critical paths file info
+        ttk.Label(self.control_frame, text=" | Paths:").pack(side=tk.LEFT, padx=(10,1))
+        paths_file = os.path.basename(critical_paths_file_path) if critical_paths_file_path else "No paths file"
+        self.paths_file_label = ttk.Label(self.control_frame, text=paths_file)
+        self.paths_file_label.pack(side=tk.LEFT)
 
         # Add an extending spacer
         ttk.Label(self.control_frame, text="").pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -1273,13 +1313,19 @@ class InteractiveDAGVisualizerApp:
         messagebox.showinfo("Layout & Interactive Features", layout_info)
 
     def save_all_weights(self):
-        """Save all weights for all patterns to the weights file"""
+        """Save all weights for all patterns to the weights file and critical paths to a separate file"""
         if not self.weights_file_path:
             self.weights_file_path = "input_weights.txt"
         
         # Collect current weights from all graphs
         all_weights = []
+        
+        # Prepare data structures for critical paths
+        all_critical_paths = []
+        path_weights = []
+        
         for i, G in enumerate(self.graphs):
+            # Collect weights
             weights = {}
             # Ensure we have weights for all nodes 0-15
             for node_idx in range(16):
@@ -1290,18 +1336,34 @@ class InteractiveDAGVisualizerApp:
                     # If the node doesn't exist in this pattern, use a random weight
                     weights[node_idx] = random.randint(*self.weight_range)
             all_weights.append(weights)
+            
+            # Collect critical paths
+            critical_paths, weight = find_all_critical_paths(G)
+            all_critical_paths.append(critical_paths)
+            path_weights.append(weight)
         
         # Write weights to file
         try:
             write_weights(self.weights_file_path, all_weights, len(self.patterns))
-            messagebox.showinfo("Success", f"Weights saved to {self.weights_file_path}")
             
-            # Update the weight file label
+            # Write critical paths if path is provided
+            if self.critical_paths_file_path:
+                write_critical_paths(self.critical_paths_file_path, all_critical_paths, path_weights)
+                messagebox.showinfo("Success", f"Weights saved to {self.weights_file_path}\nCritical paths saved to {self.critical_paths_file_path}")
+            else:
+                messagebox.showinfo("Success", f"Weights saved to {self.weights_file_path}")
+            
+            # Update the file labels
             weight_file = os.path.basename(self.weights_file_path)
             self.weight_file_label.config(text=weight_file)
+            
+            if self.critical_paths_file_path:
+                paths_file = os.path.basename(self.critical_paths_file_path)
+                self.paths_file_label.config(text=paths_file)
+                
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save weights: {str(e)}")
-    
+            messagebox.showerror("Error", f"Failed to save weights and/or paths: {str(e)}")
+
     def shuffle_weights(self):
         """Reassign random weights to the current graph"""
         try:
@@ -1548,7 +1610,8 @@ class InteractiveDAGVisualizerApp:
         # Calculate direction vector
         x1, y1 = start_pos
         x2, y2 = end_pos
-        dx, dy = x2 - x1, y2 - y1
+        dx = x2 - x1  # Fixed: don't try to unpack from subtraction result
+        dy = y2 - y1  # Fixed: calculate dx and dy separately
         
         # If the segment is too short, don't draw an arrow
         length = np.sqrt(dx**2 + dy**2)
@@ -1639,6 +1702,7 @@ def main():
     parser.add_argument("file_path", help="Path to the input file with DAG patterns")
     parser.add_argument("--limit", type=int, default=None, help="Limit the number of patterns to process")
     parser.add_argument("--weights", default="input_weights.txt", help="Path to the node weights file (default: input_weights.txt)")
+    parser.add_argument("--critical-paths", default="input_critical_path.txt", help="Path to save critical paths (default: input_critical_path.txt)")
     
     args = parser.parse_args()
     
@@ -1657,6 +1721,7 @@ def main():
         # Read or generate weights
         weights = None
         weights_file_path = args.weights
+        critical_paths_file_path = args.critical_paths
         
         if os.path.exists(weights_file_path):
             print(f"Reading weights from {weights_file_path}...")
@@ -1686,7 +1751,8 @@ def main():
         
         # Create and run the GUI
         root = tk.Tk()
-        app = InteractiveDAGVisualizerApp(root, patterns, args.file_path, weights, weights_file_path)
+        app = InteractiveDAGVisualizerApp(root, patterns, args.file_path, weights, 
+                                         weights_file_path, critical_paths_file_path)
         root.mainloop()
         
     except Exception as e:
