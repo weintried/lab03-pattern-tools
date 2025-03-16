@@ -244,6 +244,7 @@ python viz.py <您的DAG檔案>.txt
 
 - 點擊節點修改delay，跳出來的文字框可能會亂跑
 - 有些pattern實在是很難搞，畫出來會有點難辨識，只能你自己拉動節點調整
+- 第一次生成input_weights.txt的時候，不會跟著自動生成input_critical_path.txt，要自己按一下Save All Weights才會刷新
 
 ---
 
