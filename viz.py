@@ -1394,20 +1394,20 @@ class InteractiveDAGVisualizerApp:
         """Generate n visually distinct colors for paths"""
         # Basic set of distinct colors
         base_colors = [
-            '#FF6666',  # Light Red
-            '#66FF66',  # Light Green
-            '#6666FF',  # Light Blue
+            '#FF3333',  # Light Red
+            '#33FF33',  # Light Green
+            '#3333FF',  # Light Blue
             '#FFEB99',  # Light Yellow
             '#FF99FF',  # Light Magenta
             '#99FFFF',  # Light Cyan
-            '#FFB366',  # Light Orange
-            '#B366FF',  # Light Purple
-            '#66CC66',  # Muted Green
-            '#6666CC',  # Muted Blue
-            '#CC6666',  # Muted Red
-            '#66CCCC',  # Muted Teal
+            '#FFB333',  # Light Orange
+            '#B333FF',  # Light Purple
+            '#33CC33',  # Muted Green
+            '#3333CC',  # Muted Blue
+            '#CC3333',  # Muted Red
+            '#33CCCC',  # Muted Teal
             '#FFB3B3',  # Pale Pink
-            '#CC9966',  # Light Brown
+            '#CC9933',  # Light Brown
             '#CC99CC'   # Light Plum
         ]
         
